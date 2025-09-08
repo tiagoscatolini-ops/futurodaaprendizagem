@@ -1,548 +1,233 @@
-import base64
-from IPython.display import HTML
+# Bloco C — Gerar index.html (Template seguro) com carrossel e LinkedIn | título branco
+import os, base64, mimetypes
+from string import Template
+from IPython.display import HTML, display
 
-# --- Configurações de Cores e Fontes (Apple-inspired) ---
-# Cores limpas, neutras e sofisticadas, com um toque de cor para destaque.
-PRIMARY_COLOR = '#0071E3'  # Azul vibrante da Apple para links e CTAs
-SECONDARY_COLOR = '#1D1D1F' # Preto espacial para fundos e textos principais
-ACCENT_COLOR = '#34C759'    # Verde para sucesso/confirmação (usado com moderação)
-NEUTRAL_LIGHT = '#F5F5F7'   # Cinza claro para fundos
-NEUTRAL_DARK = '#86868B'    # Cinza escuro para textos secundários
-TEXT_COLOR_LIGHT = '#ffffff' # Texto claro sobre fundos escuros
-TEXT_COLOR_DARK = '#1D1D1F'  # Texto escuro sobre fundos claros (quase preto)
+# ========= CONFIGURAÇÕES =========
+AMAZON_URL   = "https://www.amazon.com.br/"          # troque pelo link real
+LINKEDIN_URL = "https://www.linkedin.com/in/tiagoscatolini/"
 
-# Fontes clean, modernas e altamente legíveis (San Francisco/SF Pro Display inspired)
-FONT_FAMILY_BODY = "'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" # Alterada para SF Pro Text/Display inspired
-FONT_FAMILY_HEADING = "'SF Pro Display', 'SF Pro Text', 'Montserrat', sans-serif" # Prioriza SF Pro, fallback para outras clean
+# (Opcional) Informe nomes exatos; se vazio, detecta automaticamente.
+AUTHOR_FILE = ""   # ex: "WhatsApp Image 2024-12-04 at 08.10.54.jpeg"
+HERO_FILE   = ""   # ex: "hero-fundo.png"
+COVER_FILE  = ""   # ex: "capa.png"
+PDF_FILE    = ""   # ex: "preview_capitulo.pdf"
 
-# --- Funções Auxiliares para Base64 (Mantendo a funcionalidade) ---
-def get_base64_data(filename):
-    """Reads a file and returns its Base64 encoded string with data URI."""
-    try:
-        with open(f"/content/{filename}", "rb") as file_data:
-            encoded_string = base64.b64encode(file_data.read()).decode("utf-8")
-            # Detect the MIME type based on file extension
-            if filename.lower().endswith('.png'):
-                return f"data:image/png;base64,{encoded_string}"
-            elif filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
-                return f"data:image/jpeg;base64,{encoded_string}"
-            elif filename.lower().endswith('.pdf'):
-                return f"data:application/pdf;base64,{encoded_string}"
-            else:
-                print(f"Aviso: Tipo de arquivo desconhecido para '{filename}'. Não será incluído.")
-                return ""
-    except FileNotFoundError:
-        print(f"Aviso: Arquivo '{filename}' não encontrado. Não será incluído.")
+# ========= FUNÇÕES =========
+def to_data_uri(path):
+    if not path or not os.path.exists(path): 
         return ""
+    mime, _ = mimetypes.guess_type(path)
+    if not mime: 
+        return ""
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:{mime};base64,{b64}"
 
-# Nomes dos arquivos disponíveis no /content/ directory
-image_files = [
-    "Gemini_Generated_Image_vi2az0vi2az0vi2a.png", # Para o fundo hero
-    "Gemini_Generated_Image_h76evh76evh76evh.png",   # Galeria
-    "Gemini_Generated_Image_bsnu1gbsnu1gbsnu.png", # Galeria
-    "Gemini_Generated_Image_o7tf47o7tf47o7tf.png", # Galeria
-    "WhatsApp Image 2024-12-04 at 08.10.54.jpeg", # Imagem do autor
-]
+def pick_by_keywords(files, *keywords):
+    cand = [f for f in files if any(k in f.lower() for k in keywords)]
+    if cand:
+        cand.sort(key=lambda x: os.path.getmtime(os.path.join("/content", x)))
+        return cand[-1]
+    return ""
 
-# Nome do arquivo PDF do primeiro capítulo (Substitua pelo nome correto do seu arquivo PDF no /content/)
-# pdf_file = "nome_do_seu_arquivo.pdf" # Removido pois o arquivo não foi encontrado.
+def pick_largest(files, exclude=set()):
+    cand = [f for f in files if f not in exclude]
+    if not cand: 
+        return ""
+    return max(cand, key=lambda f: os.path.getsize(os.path.join("/content", f)))
 
-# Dicionário para armazenar os dados em Base64
-base64_data = {}
+# ========= COLETA DE ARQUIVOS =========
+uploaded = set(os.listdir("/content"))
+img_files = [f for f in uploaded if f.lower().endswith((".png",".jpg",".jpeg"))]
+pdf_files = [f for f in uploaded if f.lower().endswith(".pdf")]
 
-# Lendo e convertendo cada arquivo para Base64
-for filename in image_files:
-    base64_data[filename] = get_base64_data(filename)
+if not AUTHOR_FILE and img_files:
+    AUTHOR_FILE = pick_by_keywords(img_files, "whatsapp", "author", "perfil") or pick_largest(img_files)
+if not HERO_FILE and img_files:
+    HERO_FILE = pick_by_keywords(img_files, "hero", "fundo", "background") or pick_largest(img_files, exclude={AUTHOR_FILE})
+if not COVER_FILE and img_files:
+    COVER_FILE = pick_by_keywords(img_files, "capa", "cover", "book") or pick_largest(img_files, exclude={AUTHOR_FILE, HERO_FILE})
+if not PDF_FILE and pdf_files:
+    PDF_FILE = pdf_files[-1]
 
-# base64_data[pdf_file] = get_base64_data(pdf_file) # Removido pois o arquivo não foi encontrado.
+# ========= DATA URI =========
+author_photo = to_data_uri(os.path.join("/content", AUTHOR_FILE)) if AUTHOR_FILE else ""
+hero_bg      = to_data_uri(os.path.join("/content", HERO_FILE))   if HERO_FILE   else ""
+cover_art    = to_data_uri(os.path.join("/content", COVER_FILE))  if COVER_FILE  else ""
+pdf_preview  = to_data_uri(os.path.join("/content", PDF_FILE))    if PDF_FILE    else ""
 
+special = {x for x in [AUTHOR_FILE, HERO_FILE, COVER_FILE, PDF_FILE] if x}
+carousel_files = [f for f in img_files if f not in special]
+carousel_files.sort(key=lambda x: os.path.getsize(os.path.join("/content", x)), reverse=True)
+carousel_imgs = [to_data_uri(os.path.join("/content", f)) for f in carousel_files]
 
-# --- Código HTML com Estilo Apple-inspired ---
-html_code = f"""
-<!DOCTYPE html>
+# ========= PARTES CONDICIONAIS =========
+opacity_val     = "0.20" if hero_bg else "1"
+hero_img_tag    = f'<img class="hero-art" src="{cover_art}" alt="Capa do livro">' if cover_art else ""
+author_img_tag  = f'<img src="{author_photo}" alt="Foto de Tiago Scatolini">' if author_photo else ""
+pdf_btn         = f"<a class='btn btn-muted' href='{pdf_preview}' download='Primeiro_Capitulo_Preview.pdf'>Baixar prévia (PDF)</a>" if pdf_preview else ""
+carousel_cards  = "".join([f'<div class="card"><img src="{img}" alt="Mockup do livro"></div>' for img in carousel_imgs])
+
+LINKEDIN_SVG = """<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.6c0-1.34-.02-3.07-1.87-3.07-1.88 0-2.17 1.47-2.17 2.98v5.69H9.31V9h3.41v1.56h.05c.47-.9 1.62-1.85 3.34-1.85 3.58 0 4.24 2.35 4.24 5.41v6.33zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.11 20.45H3.57V9h3.54v11.45z"/></svg>"""
+
+# ========= TEMPLATE HTML/CSS =========
+tpl = Template(r"""<!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>O Futuro da Aprendizagem | Tiago Scatolini</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>O Futuro da Aprendizagem | Tiago Scatolini</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:#0071E3; --secondary:#1D1D1F; --light:#F5F5F7; --muted:#86868B; --white:#fff;
+}
+/* Textos mais escuros */
+* { box-sizing:border-box; }
+body { margin:0; background:var(--light); color:#0E1116; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; line-height:1.7; }
+h1,h2,h3 { font-family:Montserrat,Inter,sans-serif; margin:.2em 0 .5em; line-height:1.1; color:#0B0D10; }
+a { color:var(--primary); text-decoration:none; } a:hover { text-decoration:underline; }
 
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-    <!-- Link para a fonte SF Pro Display/Text (se disponível publicamente ou usar fallback) -->
-    <!-- Nota: SF Pro é proprietária da Apple. Usaremos fallbacks e fontes similares. -->
+/* Hero */
+.hero { position:relative; min-height:88vh; color:#fff; display:flex; align-items:center;
+         background: radial-gradient(120% 120% at 70% 10%, #0b1220 0%, #0a0f18 50%, #07090d 100%); }
+.hero::before { content:""; position:absolute; inset:0; background: url('$hero_bg') center/cover no-repeat; opacity:$opacity_val; }
+.hero-inner { position:relative; z-index:2; max-width:1200px; margin:0 auto; padding:clamp(1.2rem,3vw,3rem);
+              display:grid; grid-template-columns:1.2fr 1fr; gap:clamp(1rem,3vw,3rem); }
+.hero-title { font-size: clamp(2.2rem, 3vw + 1.2rem, 4rem); margin:0 0 .6rem; color:#ffffff; } /* ← branco forçado */
+.hero-sub { font-size: clamp(1.1rem, 1vw + .8rem, 1.6rem); color:#d9dee6; margin:.2rem 0 1.6rem; }
 
+.btn { display:inline-flex; align-items:center; gap:.55rem; padding:.9rem 1.4rem; border-radius:999px; font-weight:700;
+       border:1px solid transparent; text-decoration:none; transition:opacity .15s, background .2s; }
+.btn-primary { background:var(--primary); color:#fff; } .btn-primary:hover{ opacity:.92; }
+.btn-muted { background:#2a2d33; color:#fff; border-color:#36404c; } .btn-muted:hover{ background:#303540; }
+.btn-ghost { background:transparent; color:#fff; border:1px solid #445265; } .btn-ghost:hover{ background:rgba(255,255,255,.06); }
+.btn svg { width:18px; height:18px; display:block; }
 
-    <style>
-        :root {{
-            --primary-color: {PRIMARY_COLOR};
-            --secondary-color: {SECONDARY_COLOR};
-            --accent-color: {ACCENT_COLOR};
-            --neutral-light: {NEUTRAL_LIGHT};
-            --neutral-dark: {NEUTRAL_DARK};
-            --text-color-light: {TEXT_COLOR_LIGHT};
-            --text-color-dark: {TEXT_COLOR_DARK};
-            --font-family-body: '{FONT_FAMILY_BODY}';
-            --font-family-heading: '{FONT_FAMILY_HEADING}';
-            --white: #FFFFFF;
-        }}
+.hero-ctas { display:flex; gap:12px; flex-wrap:wrap; }
+.hero-art { align-self:center; justify-self:center; width:min(90%, 520px); filter: drop-shadow(0 24px 40px rgba(0,0,0,.45)); border-radius:14px; }
 
-        body {{
-            font-family: var(--font-family-body);
-            margin: 0;
-            padding: 0;
-            background-color: var(--neutral-light);
-            color: var(--text-color-dark);
-            line-height: 1.6; /* Ajustado para estética Apple */
-            scroll-behavior: smooth;
-            font-size: 1rem; /* Base menor, mas com ajustes nos elementos */
-        }}
+/* Carrossel */
+.gallery { max-width:1200px; margin:24px auto 32px; padding:0 20px; }
+.scroller { display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:8px; }
+.scroller::-webkit-scrollbar { height:10px; } .scroller::-webkit-scrollbar-thumb { background:#cfd2d8; border-radius:10px; }
+.card { min-width:320px; max-width:420px; flex:0 0 auto; scroll-snap-align:start; background:#fff; border-radius:16px; padding:10px; box-shadow:0 10px 30px rgba(0,0,0,.12); }
+.card img { width:100%; height:auto; border-radius:12px; display:block; }
 
-        h1, h2, h3, h4, h5, h6 {{
-            font-family: var(--font-family-heading);
-            font-weight: 700;
-            color: var(--text-color-dark); /* Títulos em preto espacial */
-            line-height: 1.1;
-            margin-bottom: 0.5em; /* Espaçamento menor */
-        }}
+/* Conteúdo */
+.container { max-width:1100px; margin:32px auto; padding:0 20px; }
+.section-title { font-size: clamp(1.6rem, 2vw + .6rem, 2.4rem); text-align:center; margin: 18px 0; color:#0B0D10; }
+.lead { text-align:center; color:#0F141B; max-width:840px; margin:0 auto 26px; }
 
-        p {{
-            margin-bottom: 1em;
-        }}
+.features { display:grid; gap:18px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); margin-top:16px; }
+.feature { background:#fff; padding:18px; border-radius:14px; box-shadow:0 8px 20px rgba(0,0,0,.08); }
+.feature h3 { margin:.3rem 0 .4rem; font-size:1.15rem; color:#0B0D10; }
+.feature p{ margin:0; color:#0E1116; }
 
-        a {{
-            color: var(--primary-color);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }}
+.author { display:grid; grid-template-columns:160px 1fr; gap:18px; align-items:center; background:#fff; padding:18px; border-radius:16px; box-shadow:0 10px 28px rgba(0,0,0,.08); max-width:900px; margin:24px auto 0; }
+.author img { width:160px; height:160px; border-radius:50%; object-fit:cover; border:4px solid #eef1f6; box-shadow:0 8px 18px rgba(0,0,0,.12); }
+.author h3 { margin:.1rem 0 .3rem; color:#0B0D10; }
+.author p{ margin:.3rem 0; color:#0E1116; }
 
-        a:hover {{
-            text-decoration: underline;
-        }}
+.cta { text-align:center; background:#fff; padding:28px; border-radius:16px; box-shadow:0 10px 28px rgba(0,0,0,.08); margin-top:26px; color:#0E1116; }
+footer { margin-top:36px; padding:18px 10px; text-align:center; color:#161A20; }
 
-
-        /* Seção Hero - Impacto Visual Clean */
-        .hero {{
-            position: relative;
-            background-color: var(--secondary-color); /* Fundo escuro */
-            color: var(--text-color-light);
-            padding: 12rem 2rem 8rem 2rem; /* Espaçamento generoso */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            text-align: center;
-        }}
-
-         .hero-background-image {{ /* Imagem de fundo sutil */
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: url("{base64_data.get('Gemini_Generated_Image_vi2az0vi2az0vi2a.png', '')}");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            opacity: 0.2; /* Opacidade baixa para ser sutil */
-            z-index: 1;
-        }}
-
-
-        .hero-content {{
-            position: relative;
-            z-index: 2;
-            max-width: 1000px; /* Largura maior */
-            margin: 0 auto;
-        }}
-
-        .hero h1 {{
-            font-size: 4.8rem; /* Tamanho grande */
-            margin-bottom: 1rem;
-            color: var(--text-color-light);
-            font-weight: 800; /* Mais bold */
-        }}
-
-        .hero p {{
-            font-size: 2.2rem; /* Tamanho grande para o subtítulo */
-            color: var(--neutral-dark); /* Cinza suave */
-            margin-top: 0;
-            margin-bottom: 4rem;
-            letter-spacing: -0.5px; /* Espaçamento negativo sutil */
-        }}
-
-
-        /* Container principal para o conteúdo */
-        .container {{
-            max-width: 900px; /* Largura mais contida */
-            margin: -60px auto 5rem auto; /* Sobreposição menor */
-            padding: 4rem; /* Espaçamento interno generoso */
-            background-color: var(--white);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); /* Sombra sutil */
-            border-radius: 12px; /* Borda arredondada suave */
-            position: relative;
-            z-index: 2;
-            text-align: left; /* Alinha o texto à esquerda */
-        }}
-
-         .section-heading {{ /* Estilo para títulos de seção dentro do container */
-            font-size: 2.5rem;
-            color: var(--text-color-dark);
-            text-align: center; /* Centraliza títulos de seção */
-            margin-bottom: 3rem;
-        }}
-
-        /* Seção Sobre o Livro e Galeria */
-        .book-info {{
-            margin-bottom: 4rem;
-        }}
-
-        .book-text {{
-            font-size: 1.1rem; /* Tamanho do texto do corpo */
-            color: var(--text-color-dark);
-            max-width: 700px; /* Limita a largura do texto */
-            margin: 0 auto 2.5rem auto; /* Centraliza o parágrafo */
-            text-align: left;
-        }}
-
-        .book-images-gallery {{
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 20px; /* Espaçamento menor */
-            flex-wrap: wrap;
-            margin: 3rem 0;
-        }}
-
-        .book-images-gallery img {{
-            width: 100%;
-            max-width: 200px; /* Tamanho menor para a galeria */
-            height: auto;
-            border-radius: 8px; /* Borda suave */
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1); /* Sombra sutil */
-            transition: transform 0.3s ease;
-            object-fit: contain;
-            background-color: var(--neutral-light); /* Fundo claro */
-        }}
-
-        .book-images-gallery img:hover {{
-            transform: translateY(-5px); /* Efeito sutil */
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-        }}
-
-
-        /* Seção Sobre o Autor */
-        .author-section {{
-            margin-top: 4rem;
-            padding-top: 3rem;
-            border-top: 1px solid #eee; /* Separador sutil */
-            text-align: center;
-        }}
-
-        .author-content {{
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 2rem;
-            max-width: 700px;
-            margin: 0 auto;
-        }}
-
-        .author-image-container {{
-            flex-shrink: 0;
-        }}
-
-        .author-image {{
-            width: 180px; /* Tamanho da imagem do autor */
-            height: 180px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 4px solid var(--neutral-light); /* Borda clara sutil */
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1); /* Sombra sutil */
-        }}
-
-        .author-bio {{
-            text-align: left;
-            font-size: 1.1rem;
-            color: var(--text-color-dark);
-        }}
-
-        .author-bio p {{
-            margin-bottom: 1em;
-        }}
-
-        .author-linkedin-button {{
-            display: inline-block;
-            font-family: var(--font-family-body);
-            font-weight: 600;
-            padding: 0.6rem 1.5rem; /* Adjusted padding */
-            font-size: 0.9rem; /* Adjusted font size */
-            border-radius: 18px; /* Adjusted border-radius */
-            transition: background-color 0.2s ease, opacity 0.2s ease;
-            text-decoration: none;
-            text-align: center;
-            letter-spacing: -0.2px;
-            border: 1px solid var(--neutral-dark); /* Added a subtle border */
-            color: var(--text-color-dark); /* Dark text for the button */
-            background-color: transparent; /* Transparent background */
-            margin-top: 1.5rem; /* Added margin above the button */
-            cursor: pointer;
-        }}
-
-        .author-linkedin-button:hover {{
-            background-color: var(--neutral-light); /* Slight background change on hover */
-            opacity: 0.9;
-        }}
-
-
-        /* Seção de Chamada para Ação */
-        .call-to-action {{
-            margin-top: 4rem;
-            padding-top: 3rem;
-            border-top: 1px solid #eee; /* Separador sutil */
-            text-align: center;
-        }}
-
-        .call-to-action h2 {{
-            font-size: 2.5rem;
-            margin-bottom: 2rem;
-            color: var(--text-color-dark);
-        }}
-
-        .call-to-action p {{
-            font-size: 1.2rem;
-            margin-bottom: 2.5rem;
-            color: var(--neutral-dark); /* Texto secundário */
-        }}
-
-        .button-group {{
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }}
-
-        .buy-button, .preview-button {{
-            display: inline-block;
-            font-family: var(--font-family-body); /* Fonte do corpo para botões */
-            font-weight: 600; /* Semibold */
-            padding: 0.8rem 2rem; /* Padding menor */
-            font-size: 1rem; /* Tamanho padrão */
-            border-radius: 20px; /* Borda arredondada suave */
-            transition: background-color 0.2s ease, opacity 0.2s ease;
-            text-decoration: none;
-            text-align: center;
-            letter-spacing: -0.2px; /* Espaçamento negativo sutil */
-            border: none; /* Sem borda */
-            cursor: pointer;
-        }}
-
-        .buy-button {{
-            background-color: var(--primary-color);
-            color: var(--text-color-light);
-        }}
-
-        .buy-button:hover {{
-            opacity: 0.9;
-        }}
-
-        .preview-button {{
-            background-color: var(--neutral-dark); /* Botão secundário em cinza escuro */
-            color: var(--text-color-light);
-        }}
-
-        .preview-button:hover {{
-             opacity: 0.8;
-        }}
-
-
-         /* Seção de Depoimentos - Prova Social Clean */
-        .testimonials-section {{
-            margin-top: 4rem;
-            padding-top: 3rem;
-            border-top: 1px solid #eee; /* Separador sutil */
-            text-align: center;
-        }}
-
-        .testimonials-section h2 {{
-            font-size: 2.5rem;
-            margin-bottom: 3rem;
-            color: var(--text-color-dark);
-        }}
-
-        .testimonial-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Ajuste minmax */
-            gap: 2rem; /* Espaçamento menor */
-            max-width: 900px; /* Largura mais contida */
-            margin: 0 auto;
-        }}
-
-        .testimonial-card {{
-            background-color: var(--neutral-light); /* Fundo claro */
-            padding: 2rem; /* Padding menor */
-            border-radius: 10px; /* Borda suave */
-            box-shadow: 0 3px 10px rgba(0,0,0,0.08); /* Sombra muito sutil */
-            text-align: left;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }}
-
-        .testimonial-card .quote {{
-            font-size: 1.1rem; /* Tamanho do texto */
-            font-style: italic;
-            margin-bottom: 1.5rem; /* Espaçamento menor */
-            color: var(--text-color-dark);
-            quotes: "\\201C" "\\201D" "\\2018" "\\2019";
-        }}
-
-        .testimonial-card .quote::before {{
-            content: open-quote;
-        }}
-        .testimonial-card .quote::after {{
-            content: close-quote;
-        }}
-
-        .testimonial-card .author {{
-            font-weight: 600; /* Semibold */
-            color: var(--neutral-dark); /* Cor secundária */
-            text-align: right;
-            margin-top: auto;
-            font-size: 1rem; /* Tamanho padrão */
-        }}
-
-
-        /* Rodapé Clean */
-        footer {{
-            margin-top: 5rem;
-            padding: 2rem 0;
-            font-size: 0.9rem;
-            color: var(--neutral-dark);
-            width: 100%;
-            text-align: center;
-            background-color: var(--white);
-            border-top: 1px solid #eee; /* Separador sutil */
-        }}
-
-        footer a {{
-            color: var(--neutral-dark); /* Links em cinza escuro */
-            text-decoration: none;
-            font-weight: 600;
-        }}
-
-        footer a:hover {{
-            text-decoration: underline;
-        }}
-
-
-        /* Responsividade (Ajustada para estilo Apple) */
-        @media (max-width: 992px) {{
-            .hero h1 {{ font-size: 3.5rem; }}
-            .hero p {{ font-size: 1.8rem; }}
-            .container {{ padding: 3rem; margin-top: -40px; }}
-            .section-heading {{ font-size: 2rem; }}
-            .book-images-gallery img {{ max-width: 180px; }}
-             .author-image {{ width: 150px; height: 150px; }}
-        }}
-        @media (max-width: 768px) {{
-            body {{ font-size: 0.95rem; }}
-            .hero {{ padding: 8rem 1rem 5rem 1rem; }}
-            .hero h1 {{ font-size: 3rem; }}
-            .hero p {{ font-size: 1.5rem; }}
-            .container {{ margin-top: -30px; padding: 2rem; }}
-            .section-heading {{ font-size: 1.8rem; }}
-            .book-images-gallery img {{ max-width: 150px; }}
-            .button-group {{ flex-direction: column; gap: 15px; }}
-             .author-image {{ width: 120px; height: 120px; }}
-             .testimonial-grid {{ grid-template-columns: 1fr; }}
-        }}
-    </style>
+@media (max-width:940px) {
+  .hero-inner { grid-template-columns:1fr; text-align:center; }
+  .hero-ctas { justify-content:center; }
+  .hero-art { width:min(90%, 460px); }
+  .author { grid-template-columns:1fr; text-align:center; }
+}
+</style>
 </head>
 <body>
 
-    <div class="hero">
-         <div class="hero-background-image"></div>
-        <div class="hero-content">
-            <h1>O Futuro da Aprendizagem</h1>
-            <p>Inteligência Artificial e os Caminhos da Educação 5.0</p>
-        </div>
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <h1 class="hero-title">O Futuro da Aprendizagem</h1>
+      <p class="hero-sub">Inteligência Artificial e os Caminhos da Educação 5.0</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="$AMAZON_URL" target="_blank" rel="noopener noreferrer">Comprar na Amazon</a>
+        $pdf_btn
+        <a class="btn btn-ghost" href="$LINKEDIN_URL" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn de Tiago Scatolini">
+          $LINKEDIN_SVG
+          Ver perfil no LinkedIn
+        </a>
+      </div>
     </div>
+    $hero_img_tag
+  </div>
+</section>
 
-    <div class="container">
-        <section class="book-info">
-            <h2 class="section-heading">Um Guia Essencial para o Futuro Educacional</h2>
-             <p class="book-text">
-                Em "O Futuro da Aprendizagem", Tiago Scatolini mergulha fundo na revolução que a Inteligência Artificial está promovendo na educação. Este não é apenas um livro, é um mapa para navegar e liderar na Educação 5.0. Descubra as ferramentas e estratégias para preparar alunos e instituições para o futuro, explore o potencial da IA na criação de experiências educacionais mais eficientes e envolventes, e receba insights práticos para se adaptar e prosperar neste novo cenário.
-            </p>
+<section class="gallery">
+  <div class="scroller">
+    $carousel_cards
+  </div>
+</section>
 
-            <section class="book-images-gallery">
-                 <img src="{base64_data.get('Gemini_Generated_Image_h76evh76evh76evh.png', '')}" alt="Livro em ambiente de escritório">
-                 <img src="{base64_data.get('Gemini_Generated_Image_bsnu1gbsnu1gbsnu.png', '')}" alt="Livro em um pedestal">
-                 <img src="{base64_data.get('Gemini_Generated_Image_o7tf47o7tf47o7tf.png', '')}" alt="Livro em mãos">
-            </section>
+<main class="container">
+  <h2 class="section-title">Um Guia Essencial para o Futuro Educacional</h2>
+  <p class="lead">
+    Estratégias concretas para preparar alunos e instituições, explorar o potencial da IA em experiências
+    mais eficientes e envolventes e tomar decisões baseadas em evidências com segurança e ética.
+  </p>
 
-            <!-- Duplicating button group here -->
-            <div class="button-group" style="margin-top: 3rem;">
-                <a href="URL_DA_AMAZON" class="buy-button" target="_blank" rel="noopener noreferrer">Compre na Amazon</a>
-                <a href="{base64_data.get(pdf_file, '')}" class="preview-button" download="Primeiro_Capitulo_Preview.pdf">Baixar Prévia do 1º Capítulo</a>
-            </div>
-        </section>
+  <section class="features">
+    <div class="feature"><h3>IA no cotidiano</h3><p>Fluxos, ferramentas e estudos de caso para sala de aula e gestão.</p></div>
+    <div class="feature"><h3>Educação 5.0</h3><p>Tecnologia com propósito humano e indicadores de aprendizagem.</p></div>
+    <div class="feature"><h3>Ética & dados</h3><p>Diretrizes simples para uso responsável de modelos e informações.</p></div>
+  </section>
 
-         <section class="author-section">
-            <h2 class="section-heading">Sobre o Autor</h2>
-            <div class="author-content">
-                <div class="author-image-container">
-                    <img src="{base64_data.get('WhatsApp Image 2024-12-04 at 08.10.54.jpeg', '')}" alt="Imagem do Autor" class="author-image">
-                </div>
-                <div class="author-bio">
-                    <p>Tiago Scatolini é um renomado especialista em tecnologia educacional e inovação. Com anos de experiência na área, ele tem se dedicado a explorar o impacto da Inteligência Artificial no futuro da aprendizagem. Neste livro, Tiago compartilha seu conhecimento e visão para ajudar educadores, estudantes e entusiastas a navegarem nesta nova era da educação.</p>
-                     <p>Sua paixão por transformar o ensino e o aprendizado o levou a escrever esta obra, que serve como um guia prático e inspirador para todos que desejam estar na vanguarda da Educação 5.0.</p>
-                     <a href="https://www.linkedin.com/in/tiagoscatolini/" class="author-linkedin-button" target="_blank" rel="noopener noreferrer">Ver Perfil no LinkedIn</a>
-                </div>
-            </div>
-        </section>
-
-
-        <section class="testimonials-section">
-            <h2 class="section-heading">O Que os Visionários Estão Dizendo</h2>
-            <div class="testimonial-grid">
-                <div class="testimonial-card">
-                    <p class="quote">"Este livro é um farol para educadores e líderes. Tiago Scatolini desmistifica a IA e mostra seu potencial transformador para a educação."</p>
-                    <p class="author">- Dr. Ana Clara Ribeiro, Reitora de Inovação Acadêmica</p>
-                </div>
-                <div class="testimonial-card">
-                    <p class="quote">"Uma leitura indispensável para quem quer entender as tendências mais impactantes na educação. As insights sobre IA são revolucionários!"</p>
-                    <p class="author">- Prof. Marcos Viana, Especialista em Tecnologia Educacional</p>
-                </div>
-                <div class="testimonial-card">
-                    <p class="quote">"O Futuro da Aprendizagem não é apenas um título, é uma promessa cumprida. Um livro que inspira e capacita para as transformações que já chegaram."</p>
-                    <p class="author">- Sofia Costa, Fundadora de EdTech Startup</p>
-                </div>
-            </div>
-        </section>
-
-
-        <section class="call-to-action">
-            <h2 class="section-heading">Garanta sua cópia agora mesmo!</h2>
-            <p>O livro que vai revolucionar sua visão sobre o futuro da educação.</p>
-            <div class="button-group">
-                <a href="URL_DA_AMAZON" class="buy-button" target="_blank" rel="noopener noreferrer">Compre na Amazon</a>
-                <a href="{base64_data.get(pdf_file, '')}" class="preview-button" download="Primeiro_Capitulo_Preview.pdf">Baixar Prévia do 1º Capítulo</a>
-            </div>
-        </section>
+  <section class="author">
+    $author_img_tag
+    <div>
+      <h3>Tiago Scatolini</h3>
+      <p><b>MSc. Ciência Política</b>, especialista em Ciência de dados e Inteligência artificial, graduado em Ciências biológicas.</p>
+      <a class="btn btn-muted" href="$LINKEDIN_URL" target="_blank" rel="noopener noreferrer">
+        $LINKEDIN_SVG
+        Ver perfil no LinkedIn
+      </a>
     </div>
+  </section>
 
-    <footer>
-        <p>&copy; 2025 Tiago Scatolini. Todos os direitos reservados.</p>
-         <p>
-            <a href="URL_DA_AMAZON" target="_blank" rel="noopener noreferrer">Compre na Amazon</a> |
-            <a href="LINK_PARA_POLITICA_DE_PRIVACIDADE_AQUI" target="_blank" rel="noopener noreferrer">Política de Privacidade</a>
-        </p>
-    </footer>
+  <section class="cta">
+    <h3>Garanta sua cópia agora mesmo!</h3>
+    <p>O livro que vai revolucionar sua visão sobre o futuro da educação.</p>
+    <div class="hero-ctas" style="justify-content:center;">
+      <a class="btn btn-primary" href="$AMAZON_URL" target="_blank" rel="noopener noreferrer">Comprar na Amazon</a>
+      $pdf_btn
+    </div>
+  </section>
+</main>
 
-</body>
-</html>
-"""
+<footer><small>&copy; 2025 Tiago Scatolini. Todos os direitos reservados.</small></footer>
+</body></html>
+""")
 
-HTML(html_code)
+html_code = tpl.substitute(
+    AMAZON_URL=AMAZON_URL,
+    LINKEDIN_URL=LINKEDIN_URL,
+    LINKEDIN_SVG=LINKEDIN_SVG,
+    hero_bg=hero_bg,
+    opacity_val=opacity_val,
+    hero_img_tag=hero_img_tag,
+    author_img_tag=author_img_tag,
+    pdf_btn=pdf_btn,
+    carousel_cards=carousel_cards
+)
 
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html_code)
+
+print("✔️  index.html gerado com sucesso!")
+display(HTML(html_code))
+
+# download (Colab)
+try:
+    from google.colab import files as colab_files
+    colab_files.download("index.html")
+except Exception:
+    pass
